@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPU Scheduler Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #1e2d45;
+    --accent: #00d4ff;
+    --accent2: #7c3aed;
+    --accent3: #10b981;
+    --accent4: #f59e0b;
+    --accent5: #ef4444;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #94a3b8;
+    --font-main: 'Space Grotesk', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --glow-cyan: 0 0 20px rgba(0,212,255,0.35);
+    --glow-purple: 0 0 20px rgba(124,58,237,0.35);
+    --glow-green: 0 0 20px rgba(16,185,129,0.35);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-main);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Animated grid bg ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    animation: gridDrift 20s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  @keyframes gridDrift {
+    0%   { background-position: 0 0; }
+    100% { background-position: 40px 40px; }
+  }
+
+  /* Ambient orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+    animation: orbFloat 12s ease-in-out infinite alternate;
+  }
+  .orb1 { width:340px;height:340px;background:rgba(0,212,255,0.07);top:-80px;left:-80px; animation-duration:14s; }
+  .orb2 { width:280px;height:280px;background:rgba(124,58,237,0.07);bottom:60px;right:-60px; animation-duration:11s; animation-delay:-5s; }
+  .orb3 { width:200px;height:200px;background:rgba(16,185,129,0.05);top:50%;left:50%;transform:translate(-50%,-50%); animation-duration:18s; animation-delay:-9s; }
+
+  @keyframes orbFloat {
+    from { transform: translate(0,0) scale(1); }
+    to   { transform: translate(30px,20px) scale(1.07); }
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 30px 20px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 12px;
+    animation: slideDown 0.6s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  @keyframes slideDown {
+    from { opacity:0; transform:translateY(-24px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+
+  .header-left h1 {
+    font-family: var(--font-mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+    text-shadow: 0 0 40px rgba(0,212,255,0.5);
+    animation: pulseGlow 3s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulseGlow {
+    from { text-shadow: 0 0 20px rgba(0,212,255,0.3); }
+    to   { text-shadow: 0 0 50px rgba(0,212,255,0.7), 0 0 80px rgba(0,212,255,0.2); }
+  }
+
+  .header-left h1 span { color: var(--text); }
+
+  .header-left p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-family: var(--font-mono);
+  }
+
+  .version-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.25);
+    color: var(--accent);
+    padding: 4px 10px;
+    border-radius: 4px;
+    animation: badgePulse 2.5s ease-in-out infinite alternate;
+  }
+
+  @keyframes badgePulse {
+    from { box-shadow: 0 0 0 rgba(0,212,255,0); }
+    to   { box-shadow: 0 0 10px rgba(0,212,255,0.3); }
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+    animation: cardIn 0.5s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  .card:nth-child(2) { animation-delay: 0.08s; }
+  .card:nth-child(3) { animation-delay: 0.16s; }
+  .card:nth-child(4) { animation-delay: 0.24s; }
+
+  @keyframes cardIn {
+    from { opacity:0; transform:translateY(20px) scale(0.98); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  .card:hover {
+    border-color: rgba(0,212,255,0.25);
+    box-shadow: 0 0 30px rgba(0,212,255,0.06), 0 8px 32px rgba(0,0,0,0.3);
+    transform: translateY(-1px);
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%,100% { opacity: 0.4; }
+    50%      { opacity: 1; }
+  }
+
+  /* Scanline effect on cards */
+  .card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(0,212,255,0.01) 3px,
+      rgba(0,212,255,0.01) 4px
+    );
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  .card-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent);
+    flex-shrink: 0;
+    animation: dotBlink 2s ease-in-out infinite;
+  }
+
+  @keyframes dotBlink {
+    0%,100% { opacity:1; box-shadow: 0 0 8px var(--accent); }
+    50%      { opacity:0.4; box-shadow: 0 0 2px var(--accent); }
+  }
+
+  /* ── FORM CONTROLS ── */
+  .input-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+  }
+
+  .input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .input-group label {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: color 0.2s;
+  }
+
+  .input-group:focus-within label { color: var(--accent); }
+
+  input[type="number"] {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 7px;
+    width: 90px;
+    outline: none;
+    transition: border-color 0.25s, box-shadow 0.25s, transform 0.15s;
+  }
+
+  input[type="number"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,212,255,0.1), 0 0 16px rgba(0,212,255,0.15);
+    transform: scale(1.02);
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: 7px;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.2s cubic-bezier(0.22,1,0.36,1);
+    letter-spacing: 0.03em;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0);
+    transition: background 0.15s;
+  }
+
+  .btn:active { transform: scale(0.95); }
+
+  .btn-primary {
+    background: rgba(0,212,255,0.1);
+    border-color: rgba(0,212,255,0.4);
+    color: var(--accent);
+  }
+  .btn-primary:hover {
+    background: rgba(0,212,255,0.2);
+    box-shadow: 0 0 20px rgba(0,212,255,0.25), 0 4px 12px rgba(0,0,0,0.3);
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background: var(--surface2);
+    border-color: var(--border);
+    color: var(--text-dim);
+  }
+  .btn-secondary:hover {
+    border-color: var(--text-muted);
+    color: var(--text);
+    transform: translateY(-1px);
+  }
+
+  .btn-danger {
+    background: rgba(239,68,68,0.08);
+    border-color: rgba(239,68,68,0.3);
+    color: #fca5a5;
+  }
+  .btn-danger:hover {
+    background: rgba(239,68,68,0.18);
+    box-shadow: 0 0 15px rgba(239,68,68,0.2);
+    transform: translateY(-1px);
+  }
+
+  .btn-run {
+    background: linear-gradient(135deg, rgba(0,212,255,0.12), rgba(124,58,237,0.12));
+    border-color: rgba(0,212,255,0.45);
+    color: var(--accent);
+    font-size: 14px;
+    padding: 11px 32px;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-run::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0,212,255,0.06), rgba(124,58,237,0.06));
+    transform: translateX(-100%);
+    transition: transform 0.4s ease;
+  }
+
+  .btn-run:hover::before { transform: translateX(0); }
+
+  .btn-run:hover {
+    box-shadow: 0 0 28px rgba(0,212,255,0.3), 0 0 50px rgba(124,58,237,0.15);
+    transform: translateY(-2px) scale(1.02);
+    border-color: rgba(0,212,255,0.7);
+  }
+
+  .btn-run.running {
+    animation: runPulse 0.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes runPulse {
+    from { box-shadow: 0 0 12px rgba(0,212,255,0.2); }
+    to   { box-shadow: 0 0 30px rgba(0,212,255,0.5); }
+  }
+
+  /* ── PROCESS TABLE ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(30,45,69,0.5);
+    color: var(--text-dim);
+    transition: background 0.2s;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tr.proc-row {
+    transition: background 0.2s, transform 0.2s;
+  }
+
+  tr.proc-row:hover td {
+    background: rgba(0,212,255,0.04);
+    color: var(--text);
+  }
+
+  tr.proc-row.new-row {
+    animation: rowIn 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  @keyframes rowIn {
+    from { opacity:0; transform: translateX(-16px); }
+    to   { opacity:1; transform: translateX(0); }
+  }
+
+  tr.proc-row.removing {
+    animation: rowOut 0.3s ease forwards;
+  }
+
+  @keyframes rowOut {
+    from { opacity:1; transform:translateX(0) scaleY(1); max-height:60px; }
+    to   { opacity:0; transform:translateX(16px) scaleY(0); max-height:0; }
+  }
+
+  .pid-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    font-weight: 700;
+    font-size: 12px;
+    color: #000;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .pid-dot:hover {
+    transform: scale(1.15) rotate(-3deg);
+    box-shadow: 0 0 10px currentColor;
+  }
+
+  .del-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 14px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-family: var(--font-mono);
+  }
+  .del-btn:hover {
+    background: rgba(239,68,68,0.15);
+    color: #fca5a5;
+    transform: scale(1.2) rotate(90deg);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 28px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* ── ALGO BUTTONS ── */
+  .algo-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .algo-btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    transition: all 0.2s cubic-bezier(0.22,1,0.36,1);
+    letter-spacing: 0.03em;
+  }
+
+  .algo-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .algo-btn.active {
+    background: rgba(0,212,255,0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 14px rgba(0,212,255,0.2), 0 0 28px rgba(0,212,255,0.1);
+    transform: translateY(-1px);
+  }
+
+  .quantum-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    animation: fadeIn 0.3s ease both;
+  }
+
+  @keyframes fadeIn {
+    from { opacity:0; transform:translateY(-8px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+
+  /* ── GANTT ── */
+  .gantt-wrap { overflow-x: auto; padding-bottom: 8px; }
+
+  .gantt-canvas {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 650px;
+  }
+
+  .gantt-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    height: 38px;
+  }
+
+  .gantt-label {
+    min-width: 56px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    transition: transform 0.2s;
+  }
+
+  .gantt-row:hover .gantt-label { transform: scale(1.1); }
+
+  .gantt-track {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    position: relative;
+    height: 34px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px;
+  }
+
+  .gantt-bar {
+    height: 34px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: #000;
+    position: relative;
+    cursor: default;
+    transform-origin: left center;
+    /* animated in via JS */
+    transition: filter 0.2s, transform 0.2s;
+  }
+
+  .gantt-bar:hover {
+    filter: brightness(1.25) saturate(1.2);
+    transform: scaleY(1.12);
+    z-index: 2;
+  }
+
+  .gantt-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .gantt-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-4px);
+    background: #0d1526;
+    border: 1px solid rgba(0,212,255,0.3);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 20;
+    pointer-events: none;
+    font-family: var(--font-mono);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(0,212,255,0.1);
+  }
+
+  .gantt-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(0,212,255,0.3);
+  }
+
+  .gantt-bar:hover .gantt-tooltip { display: block; animation: tooltipIn 0.15s ease; }
+
+  @keyframes tooltipIn {
+    from { opacity:0; transform: translateX(-50%) translateY(0); }
+    to   { opacity:1; transform: translateX(-50%) translateY(-4px); }
+  }
+
+  .gantt-timeline {
+    display: flex;
+    margin-left: 56px;
+    margin-top: 2px;
+  }
+
+  .gantt-tick {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: left;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    padding-left: 3px;
+  }
+
+  /* ── METRICS ── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .metric-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s, box-shadow 0.25s;
+    animation: metricIn 0.5s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  .metric-card:nth-child(1) { animation-delay: 0.05s; }
+  .metric-card:nth-child(2) { animation-delay: 0.12s; }
+  .metric-card:nth-child(3) { animation-delay: 0.19s; }
+  .metric-card:nth-child(4) { animation-delay: 0.26s; }
+
+  @keyframes metricIn {
+    from { opacity:0; transform:translateY(16px) scale(0.95); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  .metric-card:hover {
+    transform: translateY(-3px) scale(1.02);
+  }
+
+  .metric-card.blue:hover  { box-shadow: 0 8px 32px rgba(0,212,255,0.15); }
+  .metric-card.green:hover { box-shadow: 0 8px 32px rgba(16,185,129,0.15); }
+  .metric-card.purple:hover{ box-shadow: 0 8px 32px rgba(167,139,250,0.15); }
+  .metric-card.amber:hover { box-shadow: 0 8px 32px rgba(245,158,11,0.15); }
+
+  /* Animated bottom bar */
+  .metric-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 2px;
+    width: 0;
+    transition: width 1.2s cubic-bezier(0.22,1,0.36,1);
+  }
+
+  .metric-card.bar-animate::after { width: 100%; }
+  .metric-card.blue::after   { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .metric-card.green::after  { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); }
+  .metric-card.purple::after { background: #a78bfa; box-shadow: 0 0 8px #a78bfa; }
+  .metric-card.amber::after  { background: var(--accent4); box-shadow: 0 0 8px var(--accent4); }
+
+  /* Glowing corner accent */
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    opacity: 0.08;
+    transition: opacity 0.3s;
+  }
+
+  .metric-card:hover::before { opacity: 0.16; }
+  .metric-card.blue::before   { background: var(--accent); }
+  .metric-card.green::before  { background: var(--accent3); }
+  .metric-card.purple::before { background: #a78bfa; }
+  .metric-card.amber::before  { background: var(--accent4); }
+
+  .metric-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .metric-value {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    transition: transform 0.3s;
+    display: inline-block;
+  }
+
+  .metric-card:hover .metric-value { transform: scale(1.06); }
+  .metric-card.blue .metric-value   { color: var(--accent); text-shadow: 0 0 16px rgba(0,212,255,0.4); }
+  .metric-card.green .metric-value  { color: var(--accent3); text-shadow: 0 0 16px rgba(16,185,129,0.4); }
+  .metric-card.purple .metric-value { color: #a78bfa; text-shadow: 0 0 16px rgba(167,139,250,0.4); }
+  .metric-card.amber .metric-value  { color: var(--accent4); text-shadow: 0 0 16px rgba(245,158,11,0.4); }
+
+  /* Count-up animation */
+  .metric-value.counting {
+    animation: countPop 0.3s cubic-bezier(0.22,1,0.36,1);
+  }
+
+  @keyframes countPop {
+    0%   { transform: scale(1.3); opacity:0.6; }
+    100% { transform: scale(1); opacity:1; }
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .badge:hover { transform: scale(1.08); }
+
+  .badge-blue   { background: rgba(0,212,255,0.1); color: var(--accent); border: 1px solid rgba(0,212,255,0.2); }
+  .badge-green  { background: rgba(16,185,129,0.1); color: var(--accent3); border: 1px solid rgba(16,185,129,0.2); }
+  .badge-red    { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+
+  /* ── SECTION REVEAL ── */
+  .section-reveal {
+    animation: sectionReveal 0.5s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  @keyframes sectionReveal {
+    from { opacity:0; transform:translateY(24px) scaleY(0.96); }
+    to   { opacity:1; transform:translateY(0) scaleY(1); }
+  }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 28px; right: 28px;
+    background: var(--surface);
+    border: 1px solid rgba(0,212,255,0.3);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    z-index: 1000;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 16px rgba(0,212,255,0.1);
+    animation: toastIn 0.35s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  @keyframes toastIn {
+    from { opacity:0; transform:translateY(20px) scale(0.9); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  .toast.out { animation: toastOut 0.3s ease forwards; }
+
+  @keyframes toastOut {
+    from { opacity:1; transform:translateY(0); }
+    to   { opacity:0; transform:translateY(10px); }
+  }
+
+  /* ── CPU CORE ANIMATION ── */
+  .cpu-viz {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .cpu-core {
+    width: 18px; height: 18px;
+    border-radius: 3px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cpu-core.active {
+    border-color: var(--accent);
+    animation: coreFlash 0.4s ease;
+  }
+
+  @keyframes coreFlash {
+    0%   { background: rgba(0,212,255,0.4); }
+    100% { background: var(--surface2); }
+  }
+
+  .cpu-core::after {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background 0.3s;
+  }
+
+  .cpu-core.active::after { background: rgba(0,212,255,0.15); }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .header-left h1 { font-size: 20px; }
+    .metrics-grid { grid-template-columns: 1fr 1fr; }
+    .input-row { gap: 8px; }
+    input[type="number"] { width: 75px; }
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<div class="container">
+
+  <div class="header">
+    <div class="header-left">
+      <h1><span>CPU</span> Scheduler Simulator</h1>
+      <p>// FCFS · SJF · SRTF · Round Robin · Priority</p>
+    </div>
+    <span class="version-badge">v2.0.0</span>
+  </div>
+
+  <!-- ADD PROCESS -->
+  <div class="card">
+    <div class="card-title">Add Process</div>
+    <div class="input-row">
+      <div class="input-group">
+        <label>Arrival Time</label>
+        <input type="number" id="inp-arrival" value="0" min="0">
+      </div>
+      <div class="input-group">
+        <label>Burst Time</label>
+        <input type="number" id="inp-burst" value="5" min="1">
+      </div>
+      <div class="input-group">
+        <label>Priority (1=High)</label>
+        <input type="number" id="inp-priority" value="1" min="1">
+      </div>
+      <button class="btn btn-primary" onclick="addProcess()">+ Add Process</button>
+      <button class="btn btn-secondary" onclick="loadSample()">Load Sample</button>
+      <button class="btn btn-danger" onclick="clearAll()">Clear All</button>
+    </div>
+  </div>
+
+  <!-- PROCESS TABLE -->
+  <div class="card">
+    <div class="card-title">Process Queue</div>
+    <table>
+      <thead>
+        <tr>
+          <th>PID</th><th>Arrival Time</th><th>Burst Time</th><th>Priority</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="proc-tbody">
+        <tr><td colspan="5" class="empty-state">No processes. Add above or load sample data.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ALGORITHM SELECT -->
+  <div class="card">
+    <div class="card-title">Scheduling Algorithm</div>
+    <div class="algo-row" id="algo-btns">
+      <button class="algo-btn active" onclick="selectAlgo('FCFS',this)">FCFS</button>
+      <button class="algo-btn" onclick="selectAlgo('SJF',this)">SJF (Non-Preemptive)</button>
+      <button class="algo-btn" onclick="selectAlgo('SRTF',this)">SRTF (Preemptive)</button>
+      <button class="algo-btn" onclick="selectAlgo('RR',this)">Round Robin</button>
+      <button class="algo-btn" onclick="selectAlgo('PRIORITY',this)">Priority</button>
+    </div>
+    <div id="rq-wrap" style="display:none" class="quantum-row">
+      <span>Time Quantum:</span>
+      <input type="number" id="inp-quantum" value="2" min="1" style="width:70px">
+    </div>
+    <button class="btn btn-run" id="run-btn" onclick="simulate()">&#9654; Run Simulation</button>
+  </div>
+
+  <!-- GANTT CHART -->
+  <div class="card section-reveal" id="gantt-section" style="display:none">
+    <div class="card-title">Gantt Chart</div>
+    <div class="gantt-wrap">
+      <div class="gantt-canvas" id="gantt-canvas"></div>
+    </div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="card section-reveal" id="metrics-section" style="display:none">
+    <div class="card-title">Performance Metrics</div>
+    <div class="metrics-grid" id="metrics-grid"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>PID</th><th>Arrival</th><th>Burst</th><th>Priority</th>
+          <th>Completion</th><th>Turnaround</th><th>Waiting</th><th>Response</th>
+        </tr>
+      </thead>
+      <tbody id="results-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+const COLORS = [
+  '#00d4ff','#10b981','#f59e0b','#ef4444','#a78bfa',
+  '#fb923c','#34d399','#f472b6','#60a5fa','#facc15'
+];
+
+let processes = [];
+let pidCounter = 1;
+let algo = 'FCFS';
+
+function pid2color(pid) { return COLORS[(pid - 1) % COLORS.length]; }
+
+function toast(msg, duration=2200) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('out');
+    setTimeout(() => t.remove(), 350);
+  }, duration);
+}
+
+function selectAlgo(a, el) {
+  algo = a;
+  document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  const rq = document.getElementById('rq-wrap');
+  rq.style.display = a === 'RR' ? 'flex' : 'none';
+  if (a === 'RR') rq.style.animation = 'none', rq.offsetHeight, rq.style.animation = '';
+}
+
+function addProcess() {
+  const arr = parseInt(document.getElementById('inp-arrival').value) || 0;
+  const bur = Math.max(1, parseInt(document.getElementById('inp-burst').value) || 1);
+  const pri = Math.max(1, parseInt(document.getElementById('inp-priority').value) || 1);
+  processes.push({ pid: pidCounter++, arrival: arr, burst: bur, priority: pri });
+  renderTable(true);
+  toast(`P${pidCounter-1} added — burst ${bur}, arrival ${arr}`);
+}
+
+function removeProcess(pid) {
+  const row = document.querySelector(`tr[data-pid="${pid}"]`);
+  if (row) {
+    row.classList.add('removing');
+    setTimeout(() => {
+      processes = processes.filter(p => p.pid !== pid);
+      renderTable(false);
+    }, 280);
+  }
+}
+
+function clearAll() {
+  processes = []; pidCounter = 1;
+  renderTable(false);
+  document.getElementById('gantt-section').style.display = 'none';
+  document.getElementById('metrics-section').style.display = 'none';
+  toast('Queue cleared');
+}
+
+function loadSample() {
+  processes = []; pidCounter = 1;
+  [[0,6,2],[2,4,1],[4,2,3],[6,8,2],[8,3,4]].forEach(([a,b,p]) =>
+    processes.push({ pid: pidCounter++, arrival: a, burst: b, priority: p })
+  );
+  renderTable(true);
+  toast('Sample data loaded — 5 processes');
+}
+
+function renderTable(animate) {
+  const tbody = document.getElementById('proc-tbody');
+  if (!processes.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No processes. Add above or load sample data.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = processes.map((p, i) => `
+    <tr class="proc-row new-row" data-pid="${p.pid}" style="animation-delay:${animate ? i * 0.04 : 0}s">
+      <td><span class="pid-dot" style="background:${pid2color(p.pid)};box-shadow:0 0 8px ${pid2color(p.pid)}44">P${p.pid}</span></td>
+      <td>${p.arrival}</td>
+      <td>${p.burst}</td>
+      <td>${p.priority}</td>
+      <td><button class="del-btn" onclick="removeProcess(${p.pid})">✕</button></td>
+    </tr>`).join('');
+}
+
+/* ===== SCHEDULING ALGORITHMS ===== */
+
+function fcfs(procs, results) {
+  let sorted = [...procs].sort((a, b) => a.arrival - b.arrival);
+  let t = 0, timeline = [];
+  sorted.forEach(p => {
+    if (t < p.arrival) t = p.arrival;
+    timeline.push({ pid: p.pid, start: t, end: t + p.burst });
+    results.push({ ...p, completion: t + p.burst, turnaround: t + p.burst - p.arrival, waiting: t - p.arrival, response: t - p.arrival });
+    t += p.burst;
+  });
+  return timeline;
+}
+
+function sjf(procs, results) {
+  let rem = [...procs].map(p => ({ ...p }));
+  let done = [], t = 0, timeline = [];
+  while (done.length < procs.length) {
+    let avail = rem.filter(p => p.arrival <= t && !done.find(d => d.pid === p.pid));
+    if (!avail.length) { t++; continue; }
+    avail.sort((a, b) => a.burst - b.burst || a.arrival - b.arrival);
+    let p = avail[0];
+    timeline.push({ pid: p.pid, start: t, end: t + p.burst });
+    results.push({ ...p, completion: t + p.burst, turnaround: t + p.burst - p.arrival, waiting: t - p.arrival, response: t - p.arrival });
+    t += p.burst; done.push(p);
+  }
+  return mergeTimeline(timeline);
+}
+
+function srtf(procs, results) {
+  let rem = procs.map(p => ({ ...p, rem: p.burst, firstRun: -1 }));
+  let t = 0, timeline = [], maxT = procs.reduce((a, p) => a + p.burst, 0) + Math.max(...procs.map(p => p.arrival)) + 2;
+  while (rem.some(p => p.rem > 0) && t < maxT) {
+    let avail = rem.filter(p => p.arrival <= t && p.rem > 0);
+    if (!avail.length) { t++; continue; }
+    avail.sort((a, b) => a.rem - b.rem || a.arrival - b.arrival);
+    let p = avail[0];
+    if (p.firstRun < 0) p.firstRun = t;
+    let last = timeline[timeline.length - 1];
+    if (last && last.pid === p.pid && last.end === t) last.end++;
+    else timeline.push({ pid: p.pid, start: t, end: t + 1 });
+    p.rem--; t++;
+    if (p.rem === 0)
+      results.push({ ...p, completion: t, turnaround: t - p.arrival, waiting: t - p.arrival - p.burst, response: p.firstRun - p.arrival });
+  }
+  return mergeTimeline(timeline);
+}
+
+function roundRobin(procs, results, quantum) {
+  let rem = procs.map(p => ({ ...p, rem: p.burst, firstRun: -1 }));
+  rem.sort((a, b) => a.arrival - b.arrival);
+  let queue = [], t = 0, timeline = [], arrived = new Set(), safety = 0;
+  rem.filter(p => p.arrival === 0).forEach(p => { queue.push(p); arrived.add(p.pid); });
+  while (queue.length && safety++ < 20000) {
+    let p = queue.shift();
+    if (p.firstRun < 0) p.firstRun = t;
+    let exec = Math.min(p.rem, quantum);
+    timeline.push({ pid: p.pid, start: t, end: t + exec });
+    t += exec; p.rem -= exec;
+    rem.filter(x => x.arrival <= t && !arrived.has(x.pid)).forEach(np => { queue.push(np); arrived.add(np.pid); });
+    if (p.rem > 0) queue.push(p);
+    else results.push({ ...p, completion: t, turnaround: t - p.arrival, waiting: t - p.arrival - p.burst, response: p.firstRun - p.arrival });
+  }
+  return mergeTimeline(timeline);
+}
+
+function prioritySched(procs, results) {
+  let rem = [...procs].map(p => ({ ...p }));
+  let done = [], t = 0, timeline = [];
+  while (done.length < procs.length) {
+    let avail = rem.filter(p => p.arrival <= t && !done.find(d => d.pid === p.pid));
+    if (!avail.length) { t++; continue; }
+    avail.sort((a, b) => a.priority - b.priority || a.arrival - b.arrival);
+    let p = avail[0];
+    timeline.push({ pid: p.pid, start: t, end: t + p.burst });
+    results.push({ ...p, completion: t + p.burst, turnaround: t + p.burst - p.arrival, waiting: t - p.arrival, response: t - p.arrival });
+    t += p.burst; done.push(p);
+  }
+  return mergeTimeline(timeline);
+}
+
+function mergeTimeline(tl) {
+  if (!tl.length) return tl;
+  let m = [{ ...tl[0] }];
+  for (let i = 1; i < tl.length; i++) {
+    let last = m[m.length - 1];
+    if (last.pid === tl[i].pid && last.end === tl[i].start) last.end = tl[i].end;
+    else m.push({ ...tl[i] });
+  }
+  return m;
+}
+
+/* ===== SIMULATION ===== */
+function simulate() {
+  if (!processes.length) { toast('⚠ Add at least one process first'); return; }
+  const btn = document.getElementById('run-btn');
+  btn.classList.add('running');
+  btn.textContent = '⏳ Simulating...';
+
+  setTimeout(() => {
+    const quantum = parseInt(document.getElementById('inp-quantum').value) || 2;
+    let results = [], timeline = [];
+    if (algo === 'FCFS')     timeline = fcfs(processes, results);
+    else if (algo === 'SJF') timeline = sjf(processes, results);
+    else if (algo === 'SRTF')timeline = srtf(processes, results);
+    else if (algo === 'RR')  timeline = roundRobin(processes, results, quantum);
+    else if (algo === 'PRIORITY') timeline = prioritySched(processes, results);
+
+    renderGantt(timeline);
+    renderMetrics(results);
+
+    const gs = document.getElementById('gantt-section');
+    const ms = document.getElementById('metrics-section');
+    gs.style.display = '';
+    ms.style.display = '';
+    gs.style.animation = 'none'; gs.offsetHeight; gs.style.animation = '';
+    ms.style.animation = 'none'; ms.offsetHeight; ms.style.animation = '';
+
+    gs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast(`✓ ${algo} simulation complete — ${results.length} processes`);
+
+    btn.classList.remove('running');
+    btn.innerHTML = '&#9654; Run Simulation';
+
+    // animate metric bars
+    setTimeout(() => {
+      document.querySelectorAll('.metric-card').forEach(c => c.classList.add('bar-animate'));
+    }, 200);
+  }, 120);
+}
+
+/* ===== GANTT RENDER ===== */
+function renderGantt(timeline) {
+  const maxT = Math.max(...timeline.map(e => e.end));
+  const unitW = Math.max(20, Math.min(56, 640 / maxT));
+  const pidGroups = {};
+  timeline.forEach(e => { if (!pidGroups[e.pid]) pidGroups[e.pid] = []; pidGroups[e.pid].push(e); });
+
+  let html = '';
+  Object.keys(pidGroups).sort((a, b) => +a - +b).forEach((pid, rowIdx) => {
+    const col = pid2color(+pid);
+    html += `<div class="gantt-row">
+      <span class="gantt-label" style="color:${col};text-shadow:0 0 10px ${col}66">P${pid}</span>
+      <div class="gantt-track">`;
+    let cur = 0;
+    pidGroups[pid].sort((a, b) => a.start - b.start).forEach((e, barIdx) => {
+      if (e.start > cur) html += `<div style="width:${(e.start - cur) * unitW}px;flex-shrink:0"></div>`;
+      const w = (e.end - e.start) * unitW;
+      const delay = (rowIdx * 0.06 + barIdx * 0.04).toFixed(2);
+      html += `<div class="gantt-bar" style="width:${w}px;background:${col};flex-shrink:0;box-shadow:0 0 10px ${col}55;animation:barGrow 0.45s cubic-bezier(0.22,1,0.36,1) ${delay}s both">
+        ${w > 30 ? `${e.start}–${e.end}` : ''}
+        <div class="gantt-tooltip">P${pid} &nbsp;|&nbsp; ${e.start} → ${e.end} &nbsp;(${e.end - e.start} units)</div>
+      </div>`;
+      cur = e.end;
+    });
+    html += '</div></div>';
+  });
+
+  const step = Math.max(1, Math.floor(maxT / 14));
+  let ticks = '';
+  for (let i = 0; i <= maxT; i += step) ticks += `<div class="gantt-tick" style="width:${step * unitW}px">${i}</div>`;
+  html += `<div class="gantt-timeline">${ticks}</div>`;
+  document.getElementById('gantt-canvas').innerHTML = html;
+
+  // inject keyframe
+  let style = document.getElementById('dyn-style');
+  if (!style) { style = document.createElement('style'); style.id = 'dyn-style'; document.head.appendChild(style); }
+  style.textContent = `
+    @keyframes barGrow {
+      from { transform: scaleX(0); opacity:0; }
+      to   { transform: scaleX(1); opacity:1; }
+    }
+  `;
+}
+
+/* ===== METRICS RENDER ===== */
+function renderMetrics(results) {
+  const avgWT  = (results.reduce((s, r) => s + r.waiting, 0) / results.length).toFixed(2);
+  const avgTAT = (results.reduce((s, r) => s + r.turnaround, 0) / results.length).toFixed(2);
+  const avgRT  = (results.reduce((s, r) => s + r.response, 0) / results.length).toFixed(2);
+  const maxCT  = Math.max(...results.map(r => r.completion));
+  const totalBurst = results.reduce((s, r) => s + r.burst, 0);
+  const cpuUtil = (totalBurst / maxCT * 100).toFixed(1);
+
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric-card blue">
+      <div class="metric-label">Avg Waiting Time</div>
+      <div class="metric-value">${avgWT}</div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-label">Avg Turnaround</div>
+      <div class="metric-value">${avgTAT}</div>
+    </div>
+    <div class="metric-card purple">
+      <div class="metric-label">Avg Response Time</div>
+      <div class="metric-value">${avgRT}</div>
+    </div>
+    <div class="metric-card amber">
+      <div class="metric-label">CPU Utilization</div>
+      <div class="metric-value">${cpuUtil}%</div>
+    </div>
+  `;
+
+  document.getElementById('results-tbody').innerHTML = results.sort((a, b) => a.pid - b.pid).map((r, i) => `
+    <tr class="proc-row new-row" style="animation-delay:${i * 0.05}s">
+      <td><span class="pid-dot" style="background:${pid2color(r.pid)};box-shadow:0 0 8px ${pid2color(r.pid)}44">P${r.pid}</span></td>
+      <td>${r.arrival}</td><td>${r.burst}</td><td>${r.priority}</td>
+      <td>${r.completion}</td>
+      <td><span class="badge badge-blue">${r.turnaround}</span></td>
+      <td><span class="badge badge-green">${r.waiting}</span></td>
+      <td><span class="badge ${r.response >= 0 ? 'badge-blue' : 'badge-red'}">${r.response}</span></td>
+    </tr>`).join('');
+}
+</script>
+</body>
+</html>
